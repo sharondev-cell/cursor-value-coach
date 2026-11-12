@@ -7,7 +7,7 @@ This policy describes how the **Value Coach for Cursor** editor extension (“Va
 ## Summary
 
 - Coaching scans **local** Cursor agent transcripts for structural counts and tool fingerprints only. Chat text is not stored by the extension and is not uploaded to the publisher.
-- Optional live plan-usage % reads your **local** Cursor login material on-device and calls Cursor’s own API (`api2.cursor.sh`). That path can be turned off.
+- Optional live plan-usage % reads your **local** Cursor login material on-device and calls Cursor’s own API (`api2.cursor.sh`). That path is **off by default** and requires an in-editor consent prompt (or an explicit settings enable).
 - The publisher does **not** operate a telemetry backend for this extension today.
 
 ## Data the extension may access
@@ -26,9 +26,9 @@ It does **not** persist raw chat/message text for coaching history.
 
 **Control:** set `valueCoach.readTranscripts` to `false` to stop transcript reading (coaching pauses).
 
-### 2. Live plan usage (optional; default on)
+### 2. Live plan usage (optional; default off — consent required)
 
-When `valueCoach.showUsage` is enabled, the extension may:
+When you accept the first-run consent prompt (or later set `valueCoach.showUsage` to true and confirm), the extension may:
 
 1. Read Cursor’s local encrypted session store (`state.vscdb`) on your machine
 2. Decrypt login material **on-device** (for example Windows DPAPI / OSCrypt, where implemented)

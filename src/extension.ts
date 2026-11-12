@@ -2,6 +2,11 @@ import * as vscode from "vscode";
 import { evaluate } from "./coach/engine";
 import { SessionController } from "./coach/session";
 import { rotateTip } from "./coach/tips";
+import {
+  bootstrapUsageConsent,
+  ensureUsageConsent,
+  setUsageConsent,
+} from "./consent";
 import { buildWeeklyReport } from "./report";
 import { scanLatestTranscript } from "./signals/transcripts";
 import { EventStore } from "./store";
@@ -377,12 +382,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       void usageBar?.refresh(false);
       vscode.window.showInformationMessage("Value Coach refreshed.");
     }),
-    vscode.commands.registerCommand("valueCoach.refreshUsage", () =>
-      usageBar?.refresh(true)
-    ),
-    vscode.commands.registerCommand("valueCoach.usageMenu", () =>
-      usageBar?.showMenu()
-    ),
+    vscode.commands.registerCommand("valueCoach.refreshUsage", async () => {
+      const ok = await ensureUsageConsent(context.globalState, {
+        interactive: true,
+      });
+      if (ok) {
+        await usageBar?.refresh(true);
+      }
+    }),
+    vscode.commands.registerCommand("valueCoach.usageMenu", async () => {
+      const show = vscode.workspace
+        .getConfiguration("valueCoach")
+        .get<boolean>("showUsage", false);
+      if (!show) {
+        const ok = await ensureUsageConsent(context.globalState, {
+          interactive: true,
+        });
+        if (!ok) {
+          await openPlanAndUsage();
+          return;
+        }
+        usageBar?.start();
+      }
+      await usageBar?.showMenu();
+    }),
     vscode.commands.registerCommand("valueCoach.openPlanUsage", () =>
       openPlanAndUsage()
     ),
@@ -391,7 +414,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     ),
     vscode.commands.registerCommand("valueCoach.clearLocalData", async () => {
       const pick = await vscode.window.showWarningMessage(
-        "Clear all stored coaching events and snooze state?",
+        "Clear all stored coaching events, snooze state, and usage-consent choice?",
         { modal: true },
         "Clear"
       );
@@ -400,6 +423,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       store.clear();
       await session.clearSnooze();
+      await setUsageConsent(context.globalState, undefined);
+      await vscode.workspace
+        .getConfiguration("valueCoach")
+        .update("showUsage", false, vscode.ConfigurationTarget.Global);
+      usageBar?.start();
       provider.refresh();
       vscode.window.showInformationMessage("Value Coach local data cleared.");
     }),
@@ -411,14 +439,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       });
       await vscode.window.showTextDocument(doc);
     }),
-    vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration("valueCoach")) {
-        lastPollSeconds = 0;
-        restartPoll(store, provider, session, context);
-        tick(store, provider, session, true);
-        usageBar?.restartTimer();
-        usageBar?.start();
+    vscode.workspace.onDidChangeConfiguration(async (e) => {
+      if (!e.affectsConfiguration("valueCoach")) {
+        return;
       }
+      if (e.affectsConfiguration("valueCoach.showUsage")) {
+        const enabled = vscode.workspace
+          .getConfiguration("valueCoach")
+          .get<boolean>("showUsage", false);
+        if (enabled) {
+          const ok = await ensureUsageConsent(context.globalState);
+          if (!ok) {
+            usageBar?.start();
+            return;
+          }
+        }
+      }
+      lastPollSeconds = 0;
+      restartPoll(store, provider, session, context);
+      tick(store, provider, session, true);
+      usageBar?.restartTimer();
+      usageBar?.start();
     }),
     {
       dispose: () => {
@@ -428,6 +469,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       },
     }
   );
+
+  await bootstrapUsageConsent(context.globalState);
 
   tick(store, provider, session, true);
   restartPoll(store, provider, session, context);

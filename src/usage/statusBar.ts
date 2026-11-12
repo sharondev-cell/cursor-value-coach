@@ -34,7 +34,7 @@ export class UsageStatusBar implements vscode.Disposable {
   }
 
   start(): void {
-    if (!cfg().get<boolean>("showUsage", true)) {
+    if (!cfg().get<boolean>("showUsage", false)) {
       this.item.hide();
       this.stop();
       return;
@@ -53,7 +53,7 @@ export class UsageStatusBar implements vscode.Disposable {
 
   restartTimer(): void {
     this.stop();
-    if (!cfg().get<boolean>("showUsage", true)) {
+    if (!cfg().get<boolean>("showUsage", false)) {
       return;
     }
     const minutes = cfg().get<number>("usageRefreshMinutes", 5);
@@ -64,7 +64,7 @@ export class UsageStatusBar implements vscode.Disposable {
   }
 
   async refresh(interactive: boolean): Promise<void> {
-    if (!cfg().get<boolean>("showUsage", true)) {
+    if (!cfg().get<boolean>("showUsage", false)) {
       this.item.hide();
       return;
     }

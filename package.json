@@ -2,7 +2,7 @@
   "name": "cursor-value-coach",
   "displayName": "Value Coach for Cursor",
   "description": "Stops Cursor quota blowups: detects identical tool retries and unattended agent burns, then coaches a cheaper next move. Independent — not affiliated with Cursor.",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "publisher": "sharon",
   "author": "Sharon",
   "license": "SEE LICENSE IN LICENSE",
@@ -83,8 +83,8 @@
         },
         "valueCoach.showUsage": {
           "type": "boolean",
-          "default": true,
-          "description": "Show live Cursor plan usage % in the status bar (reads local login, calls api2.cursor.sh). Turn off to keep coaching fully offline."
+          "default": false,
+          "description": "Show live Cursor plan usage % in the status bar (reads local login, calls api2.cursor.sh). Off by default until you consent on first run or enable it here."
         },
         "valueCoach.usageRefreshMinutes": {
           "type": "number",

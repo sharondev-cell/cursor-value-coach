@@ -40,7 +40,7 @@ Marketplace / Open VSX links will appear here once published.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `valueCoach.showUsage` | true | Live usage status bar (uses Cursor login + api2.cursor.sh) |
+| `valueCoach.showUsage` | false | Live usage status bar (off until consent; uses Cursor login + api2.cursor.sh) |
 | `valueCoach.usageRefreshMinutes` | 5 | Usage poll interval |
 | `valueCoach.usageWarnPercent` | 80 | Yellow threshold |
 | `valueCoach.usageCriticalPercent` | 95 | Red threshold |
@@ -48,14 +48,15 @@ Marketplace / Open VSX links will appear here once published.
 | `valueCoach.unattendedToolThreshold` | 16 | Tools since last message + repetitive/stuck → unattended |
 | `valueCoach.readTranscripts` | true | Offline coaching from local logs |
 
-Set `showUsage` to `false` if you want coaching fully offline.
+Live usage is **off by default**. On first run you get a consent prompt; coaching still works offline either way.
 
-## Privacy
+## Privacy & terms
 
-Full policy: [PRIVACY.md](PRIVACY.md).
+- [PRIVACY.md](PRIVACY.md)
+- [TERMS.md](TERMS.md)
 
 - **Coach path**: local transcript counts/hashes only — no chat text stored, no upload to the publisher.
-- **Usage path** (optional): reads encrypted Cursor login from local `state.vscdb`, decrypts on-device (Windows DPAPI + OSCrypt), calls `api2.cursor.sh` **GetCurrentPeriodUsage**. Token is not written to disk by this extension.
+- **Usage path** (optional, consent required): reads encrypted Cursor login from local `state.vscdb`, decrypts on-device (Windows DPAPI + OSCrypt), calls `api2.cursor.sh` **GetCurrentPeriodUsage**. Token is not written to disk by this extension.
 - **Kill switches**: `valueCoach.showUsage` / `valueCoach.readTranscripts` / **Clear Local Data**.
 
 ## Platform notes

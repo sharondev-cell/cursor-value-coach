@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.2
+
+### Added
+
+- First-run consent modal before live usage (login decrypt + api2.cursor.sh).
+- TERMS.md
+
+### Changed
+
+- `valueCoach.showUsage` defaults to **false** until consent is granted.
+
 ## 0.3.1
 
 ### Changed

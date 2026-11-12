@@ -5,7 +5,7 @@ Thanks for using Value Coach. This is a free, independently maintained extension
 ## Getting help
 
 1. Check [README.md](README.md) for install, settings, and privacy kill switches.
-2. Check [PRIVACY.md](PRIVACY.md) for what the extension accesses.
+2. Check [PRIVACY.md](PRIVACY.md) and [TERMS.md](TERMS.md).
 3. Use the editor command palette:
    - **Value Coach: Open Panel**
    - **Value Coach: Refresh Now**

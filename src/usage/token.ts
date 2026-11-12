@@ -4,6 +4,12 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 
+/** Only these ItemTable keys may be read from Cursor state.vscdb. */
+const ALLOWED_STATE_KEYS = new Set([
+  "cursorAuth/accessToken",
+  "cursorAuth/stripeMembershipType",
+]);
+
 function cursorUserDataRoot(): string {
   if (process.platform === "darwin") {
     return path.join(os.homedir(), "Library", "Application Support", "Cursor");
@@ -34,6 +40,9 @@ function localStatePath(): string {
 }
 
 function readItem(key: string): string | undefined {
+  if (!ALLOWED_STATE_KEYS.has(key)) {
+    throw new Error("Refused to read non-allowlisted Cursor state key");
+  }
   const dbPath = stateDbPath();
   if (!fs.existsSync(dbPath)) {
     return undefined;
@@ -53,7 +62,9 @@ function readItem(key: string): string | undefined {
   };
   const db = new DatabaseSync(dbPath, { readOnly: true });
   try {
-    const row = db.prepare("SELECT value FROM ItemTable WHERE key = ?").get(key);
+    const row = db
+      .prepare("SELECT value FROM ItemTable WHERE key = ?")
+      .get(key);
     if (row?.value == null) {
       return undefined;
     }
@@ -63,23 +74,67 @@ function readItem(key: string): string | undefined {
   }
 }
 
-function dpapiUnprotectWindows(buf: Buffer): Buffer {
-  const b64 = buf.toString("base64");
-  const ps = `
-Add-Type -AssemblyName System.Security
-$bytes = [Convert]::FromBase64String('${b64}')
-$plain = [System.Security.Cryptography.ProtectedData]::Unprotect($bytes, $null, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
-[Convert]::ToBase64String($plain)
-`;
-  const out = execFileSync(
-    "powershell.exe",
-    ["-NoProfile", "-NonInteractive", "-Command", ps],
-    { encoding: "utf8", windowsHide: true, timeout: 15_000 }
-  ).trim();
-  if (!out) {
-    throw new Error("DPAPI returned empty");
+function wipeFile(filePath: string): void {
+  try {
+    if (!fs.existsSync(filePath)) {
+      return;
+    }
+    const size = fs.statSync(filePath).size;
+    if (size > 0) {
+      fs.writeFileSync(filePath, Buffer.alloc(size, 0));
+    }
+    fs.unlinkSync(filePath);
+  } catch {
+    // best-effort
   }
-  return Buffer.from(out, "base64");
+}
+
+/**
+ * DPAPI unprotect without putting ciphertext/plaintext on the process command line.
+ * Uses short-lived temp files + env paths only.
+ */
+function dpapiUnprotectWindows(buf: Buffer): Buffer {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vc-dpapi-"));
+  const inFile = path.join(dir, "in.bin");
+  const outFile = path.join(dir, "out.bin");
+  try {
+    fs.writeFileSync(inFile, buf, { mode: 0o600 });
+    const ps = `
+Add-Type -AssemblyName System.Security
+$in = $env:VC_DPAPI_IN
+$out = $env:VC_DPAPI_OUT
+if (-not $in -or -not $out) { throw 'missing VC_DPAPI paths' }
+$bytes = [IO.File]::ReadAllBytes($in)
+$plain = [System.Security.Cryptography.ProtectedData]::Unprotect(
+  $bytes, $null, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
+[IO.File]::WriteAllBytes($out, $plain)
+`;
+    execFileSync(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-Command", ps],
+      {
+        env: {
+          ...process.env,
+          VC_DPAPI_IN: inFile,
+          VC_DPAPI_OUT: outFile,
+        },
+        windowsHide: true,
+        timeout: 15_000,
+      }
+    );
+    if (!fs.existsSync(outFile)) {
+      throw new Error("DPAPI returned empty");
+    }
+    return fs.readFileSync(outFile);
+  } finally {
+    wipeFile(inFile);
+    wipeFile(outFile);
+    try {
+      fs.rmdirSync(dir);
+    } catch {
+      // best-effort
+    }
+  }
 }
 
 function getOsCryptKeyWindows(): Buffer {
@@ -103,9 +158,12 @@ function getOsCryptKeyWindows(): Buffer {
  */
 export function decryptCursorSafeStorage(sealed: string, key: Buffer): string {
   if (!sealed.startsWith("cursor-safe-storage:v1:")) {
-    return sealed;
+    throw new Error("Unsupported Cursor safe-storage format");
   }
-  const raw = Buffer.from(sealed.slice("cursor-safe-storage:v1:".length), "base64");
+  const raw = Buffer.from(
+    sealed.slice("cursor-safe-storage:v1:".length),
+    "base64"
+  );
   if (raw.length < 3 + 12 + 16) {
     throw new Error("Sealed token too short");
   }
@@ -124,13 +182,20 @@ export function decryptCursorSafeStorage(sealed: string, key: Buffer): string {
   );
 }
 
-/** Read + decrypt Cursor access token. Token is never written to disk by us. */
+/**
+ * Read + decrypt Cursor access token in memory only.
+ * Never writes the token to disk; callers must not log it.
+ */
 export function readAccessToken(): string {
   const sealed = readItem("cursorAuth/accessToken");
   if (!sealed) {
     throw new Error("No cursorAuth/accessToken in local Cursor storage");
   }
   if (!sealed.startsWith("cursor-safe-storage:")) {
+    // Rare plaintext legacy — still never persist; refuse unexpected huge blobs
+    if (sealed.length > 8_192) {
+      throw new Error("Refusing unexpectedly large auth value");
+    }
     return sealed;
   }
   if (process.platform !== "win32") {
@@ -139,9 +204,17 @@ export function readAccessToken(): string {
     );
   }
   const key = getOsCryptKeyWindows();
-  return decryptCursorSafeStorage(sealed, key);
+  try {
+    return decryptCursorSafeStorage(sealed, key);
+  } finally {
+    key.fill(0);
+  }
 }
 
 export function readMembershipHint(): string | undefined {
-  return readItem("cursorAuth/stripeMembershipType") ?? undefined;
+  const v = readItem("cursorAuth/stripeMembershipType") ?? undefined;
+  if (v != null && v.length > 128) {
+    return undefined;
+  }
+  return v;
 }

@@ -68,11 +68,15 @@ The publisher does **not** currently collect analytics, crash reports, or accoun
 
 Value Coach is intended for adult developers and workplace use. It is not directed at children.
 
+## Security & misuse
+
+See [SECURITY.md](SECURITY.md). In short: install only from trusted listings; a malicious modified build of *any* login-reading extension could exfiltrate a session. This project’s published source allowlists keys, hardcodes the usage URL, keeps usage off until consent, and avoids putting secrets on process command lines.
+
 ## Your choices
 
 - Disable transcript coaching: `valueCoach.readTranscripts`
 - Disable live usage: `valueCoach.showUsage`
-- Clear local coaching data: **Value Coach: Clear Local Data**
+- Clear local coaching data + usage consent: **Value Coach: Clear Local Data**
 - Uninstall the extension from the editor’s Extensions view
 
 ## Contact

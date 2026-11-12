@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { loadUsageSnapshot } from "./fetch";
 import { openPlanAndUsage } from "./openPlanUsage";
+import { scrubSensitive } from "./scrub";
 import type { UsageSnapshot } from "./types";
 
 function cfg() {
@@ -83,19 +84,20 @@ export class UsageStatusBar implements vscode.Disposable {
   private async doRefresh(interactive: boolean): Promise<void> {
     const result = await loadUsageSnapshot();
     if (!result.ok) {
-      this.lastError = result.reason;
+      const reason = scrubSensitive(result.reason);
+      this.lastError = reason;
       this.item.text = "$(dashboard) Usage · open";
       this.item.tooltip = [
         "Could not load live usage (click → Plan & Usage).",
         "",
-        result.reason,
+        reason,
         "",
         "Coach still works offline from local transcripts.",
       ].join("\n");
       this.item.backgroundColor = undefined;
       if (interactive) {
         const pick = await vscode.window.showWarningMessage(
-          `Value Coach usage: ${result.reason}`,
+          `Value Coach usage: ${reason}`,
           "Open Plan & Usage",
           "Dismiss"
         );

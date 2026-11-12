@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.3
+
+### Security
+
+- DPAPI decrypt no longer places secrets on the PowerShell command line (temp files + wipe).
+- Cursor `state.vscdb` reads allowlisted to auth keys only.
+- Usage fetch hard-allowlists `api2.cursor.sh`, rejects redirects, scrubs tokens from UI errors.
+- Stronger consent copy; added SECURITY.md and listing data-access table.
+
 ## 0.3.2
 
 ### Added

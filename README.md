@@ -50,14 +50,19 @@ Marketplace / Open VSX links will appear here once published.
 
 Live usage is **off by default**. On first run you get a consent prompt; coaching still works offline either way.
 
-## Privacy & terms
+## Data access (listing disclosure)
 
-- [PRIVACY.md](PRIVACY.md)
-- [TERMS.md](TERMS.md)
+| Path | Default | What happens |
+| --- | --- | --- |
+| Coaching | On | Reads local agent-transcript **structure** (counts / tool hashes). No chat text uploaded to the publisher. |
+| Live usage % | **Off** until consent | Reads allowlisted local Cursor login keys, decrypts on-device, calls **only** `api2.cursor.sh` GetCurrentPeriodUsage. Token not written to disk; not sent to the publisher. |
+| Publisher telemetry | None | This extension does not phone home to the publisher. |
 
-- **Coach path**: local transcript counts/hashes only — no chat text stored, no upload to the publisher.
-- **Usage path** (optional, consent required): reads encrypted Cursor login from local `state.vscdb`, decrypts on-device (Windows DPAPI + OSCrypt), calls `api2.cursor.sh` **GetCurrentPeriodUsage**. Token is not written to disk by this extension.
-- **Kill switches**: `valueCoach.showUsage` / `valueCoach.readTranscripts` / **Clear Local Data**.
+Full docs: [PRIVACY.md](PRIVACY.md) · [TERMS.md](TERMS.md) · [SECURITY.md](SECURITY.md)
+
+**Kill switches:** `valueCoach.showUsage` / `valueCoach.readTranscripts` / **Clear Local Data**.
+
+**Install safety:** prefer the official Open VSX / Marketplace listing (or this GitHub repo). A modified VSIX from an untrusted source could abuse any login-decrypt feature — see SECURITY.md.
 
 ## Platform notes
 

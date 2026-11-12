@@ -24,7 +24,7 @@ export async function setUsageConsent(
 
 async function promptUsageConsent(state: vscode.Memento): Promise<boolean> {
   const pick = await vscode.window.showInformationMessage(
-    "Value Coach can show live Cursor plan usage %. That reads your local Cursor login on this machine and calls api2.cursor.sh. Coaching from local transcripts works either way. See PRIVACY.md / TERMS.md in the extension.",
+    "Enable live Cursor usage %? Value Coach would read your local Cursor login on this PC and call only api2.cursor.sh GetCurrentPeriodUsage. The token is not saved to disk or sent to the publisher. Coaching still works fully offline. Details: PRIVACY.md, TERMS.md, SECURITY.md.",
     { modal: true },
     "Enable live usage",
     "Keep offline"

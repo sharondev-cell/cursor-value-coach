@@ -1,0 +1,198 @@
+{
+  "name": "cursor-value-coach",
+  "displayName": "Value Coach for Cursor",
+  "description": "Stops Cursor quota blowups: detects identical tool retries and unattended agent burns, then coaches a cheaper next move. Independent — not affiliated with Cursor.",
+  "version": "0.3.1",
+  "publisher": "sharon",
+  "author": "Sharon",
+  "license": "SEE LICENSE IN LICENSE",
+  "pricing": "Free",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "cursor",
+    "tokens",
+    "cost",
+    "coach",
+    "agent",
+    "usage",
+    "loop",
+    "quota"
+  ],
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#1e1e1e",
+    "theme": "dark"
+  },
+  "qna": "marketplace",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "valueCoach.showPanel",
+        "title": "Value Coach: Open Panel"
+      },
+      {
+        "command": "valueCoach.refresh",
+        "title": "Value Coach: Refresh Now"
+      },
+      {
+        "command": "valueCoach.startNewChat",
+        "title": "Value Coach: Suggest New Chat"
+      },
+      {
+        "command": "valueCoach.weeklyReport",
+        "title": "Value Coach: Weekly Report"
+      },
+      {
+        "command": "valueCoach.clearLocalData",
+        "title": "Value Coach: Clear Local Data"
+      },
+      {
+        "command": "valueCoach.usageMenu",
+        "title": "Value Coach: Usage Menu"
+      },
+      {
+        "command": "valueCoach.refreshUsage",
+        "title": "Value Coach: Refresh Usage"
+      },
+      {
+        "command": "valueCoach.openPlanUsage",
+        "title": "Value Coach: Open Plan & Usage"
+      }
+    ],
+    "configuration": {
+      "title": "Value Coach for Cursor",
+      "properties": {
+        "valueCoach.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable coaching nudges."
+        },
+        "valueCoach.readTranscripts": {
+          "type": "boolean",
+          "default": true,
+          "description": "Allow reading local Cursor agent-transcript files for turn/tool counts only. Turn off for maximum privacy (coaching pauses)."
+        },
+        "valueCoach.showUsage": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show live Cursor plan usage % in the status bar (reads local login, calls api2.cursor.sh). Turn off to keep coaching fully offline."
+        },
+        "valueCoach.usageRefreshMinutes": {
+          "type": "number",
+          "default": 5,
+          "minimum": 1,
+          "description": "How often to refresh live plan usage."
+        },
+        "valueCoach.usageWarnPercent": {
+          "type": "number",
+          "default": 80,
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Warn (yellow) status bar when usage reaches this percent."
+        },
+        "valueCoach.usageCriticalPercent": {
+          "type": "number",
+          "default": 95,
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Critical (red) status bar when usage reaches this percent."
+        },
+        "valueCoach.showToasts": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show toast notifications for coaching nudges."
+        },
+        "valueCoach.turnThreshold": {
+          "type": "number",
+          "default": 24,
+          "minimum": 6,
+          "description": "User+assistant turns before nudging a new chat."
+        },
+        "valueCoach.toolLoopThreshold": {
+          "type": "number",
+          "default": 12,
+          "minimum": 4,
+          "description": "Tool calls in the lookback window that trigger a tool-loop nudge."
+        },
+        "valueCoach.repeatLoopThreshold": {
+          "type": "number",
+          "default": 3,
+          "minimum": 2,
+          "description": "Identical tool+args signature repeats before a critical STOP nudge (the walk-away quota killer)."
+        },
+        "valueCoach.unattendedToolThreshold": {
+          "type": "number",
+          "default": 16,
+          "minimum": 4,
+          "description": "Tool events since your last message before an unattended-burn nudge — only fires when tooling also looks repetitive/stuck, not for long varied workloads."
+        },
+        "valueCoach.toolLoopWindowMinutes": {
+          "type": "number",
+          "default": 15,
+          "minimum": 5,
+          "description": "Minutes to look back for tool-loop detection."
+        },
+        "valueCoach.pollSeconds": {
+          "type": "number",
+          "default": 45,
+          "minimum": 15,
+          "description": "How often to rescan local transcripts (auto-drops to 15s during critical burns)."
+        },
+        "valueCoach.toastCooldownMinutes": {
+          "type": "number",
+          "default": 30,
+          "minimum": 5,
+          "description": "Minimum minutes between identical nudges (critical burns use ≤5m; escalations can notify sooner)."
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "valueCoach",
+          "title": "Value Coach",
+          "icon": "media/coach.svg"
+        }
+      ]
+    },
+    "views": {
+      "valueCoach": [
+        {
+          "id": "valueCoach.events",
+          "name": "Coaching Events"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package --no-dependencies",
+    "publish:ovsx": "ovsx publish --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.2.0",
+    "ovsx": "^0.10.1",
+    "typescript": "^5.4.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sharondev-cell/cursor-value-coach.git"
+  },
+  "homepage": "https://github.com/sharondev-cell/cursor-value-coach#readme",
+  "bugs": {
+    "url": "https://github.com/sharondev-cell/cursor-value-coach/issues"
+  }
+}

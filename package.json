@@ -3,7 +3,7 @@
   "displayName": "Value Coach for Cursor",
   "description": "Stops Cursor quota blowups: detects identical tool retries and unattended agent burns, then coaches a cheaper next move. Independent — not affiliated with Cursor.",
   "version": "0.3.3",
-  "publisher": "sharon",
+  "publisher": "sharondev-cell",
   "author": "Sharon",
   "license": "SEE LICENSE IN LICENSE",
   "pricing": "Free",

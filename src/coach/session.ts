@@ -1,7 +1,13 @@
-import * as vscode from "vscode";
 import type { CoachKind, CoachVerdict } from "../types";
 
 const STATE_KEY = "valueCoach.sessionGate";
+
+/** Minimal memento shape (vscode.Memento or in-memory per-window store). */
+export interface SessionStore {
+  get<T>(key: string): T | undefined;
+  get<T>(key: string, defaultValue: T): T;
+  update(key: string, value: unknown): Thenable<void>;
+}
 
 export interface SessionGate {
   snoozeUntil: number;
@@ -16,7 +22,7 @@ export interface SessionGate {
 }
 
 export class SessionController {
-  constructor(private readonly state: vscode.Memento) {}
+  constructor(private readonly state: SessionStore) {}
 
   get(): SessionGate {
     return (

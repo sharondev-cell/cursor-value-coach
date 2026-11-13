@@ -9,19 +9,37 @@ import {
 } from "./consent";
 import { buildWeeklyReport } from "./report";
 import { scanLatestTranscript } from "./signals/transcripts";
+import { WindowChatScope } from "./signals/windowChatScope";
 import { EventStore } from "./store";
 import type { CoachEvent, CoachVerdict } from "./types";
 import { EventsProvider } from "./ui/eventsView";
 import { openPlanAndUsage } from "./usage/openPlanUsage";
 import { UsageStatusBar } from "./usage/statusBar";
+import { MemoryMemento } from "./util/memoryMemento";
 
 let statusBar: vscode.StatusBarItem;
 let usageBar: UsageStatusBar | undefined;
 let pollTimer: NodeJS.Timeout | undefined;
 let latestVerdict: CoachVerdict | undefined;
+/** Per extension-host (= per Cursor window) chat pin. */
+let chatScope: WindowChatScope | undefined;
 
 function cfg() {
   return vscode.workspace.getConfiguration("valueCoach");
+}
+
+/** Scope coaching to this window's pinned chat — not every chat on the folder. */
+function scanActiveTranscript(windowMinutes: number) {
+  const scope = chatScope;
+  const workspaceFolderPaths = scope?.workspaceFolderPaths() ?? [];
+  const preferredComposerIds = scope?.preferredComposerIds() ?? [];
+  return scanLatestTranscript(windowMinutes, {
+    workspaceFolderPaths,
+    preferredComposerIds,
+    // Always strict once we participate in multi-window same-folder setups:
+    // never fall back to "newest transcript in the project".
+    strictPreferred: true,
+  });
 }
 
 function thresholds() {
@@ -65,6 +83,9 @@ async function suggestNewChat(): Promise<void> {
   for (const id of candidates) {
     try {
       await vscode.commands.executeCommand(id);
+      // New chat belongs to this window — drop the old pin and re-seed on focus.
+      chatScope?.clearPin();
+      chatScope?.refresh();
       vscode.window.showInformationMessage(
         "New chat opened (if Cursor supported the command). Paste only the next subtask."
       );
@@ -87,7 +108,7 @@ async function showCoachMenu(
     latestVerdict ??
     evaluate(
       cfg().get<boolean>("readTranscripts", true)
-        ? scanLatestTranscript(cfg().get<number>("toolLoopWindowMinutes", 15))
+        ? scanActiveTranscript(cfg().get<number>("toolLoopWindowMinutes", 15))
         : undefined,
       thresholds()
     );
@@ -298,7 +319,7 @@ function tick(
   }
 
   const windowMin = cfg().get<number>("toolLoopWindowMinutes", 15);
-  const signal = scanLatestTranscript(windowMin);
+  const signal = scanActiveTranscript(windowMin);
   const verdict = evaluate(signal, thresholds());
   latestVerdict = verdict;
   updateStatus(verdict, session);
@@ -358,8 +379,11 @@ function maybeRetunePoll(
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const store = new EventStore(context.globalState);
   store.scrubLegacyPaths();
-  const session = new SessionController(context.globalState);
+  // In-memory: same workspace folder can be open in many windows (different
+  // branches/chats); workspaceState/globalState would share snooze across them.
+  const session = new SessionController(new MemoryMemento());
   const provider = new EventsProvider(store);
+  chatScope = new WindowChatScope();
 
   statusBar = vscode.window.createStatusBarItem(
     vscode.StatusBarAlignment.Right,
@@ -373,6 +397,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(
     statusBar,
     usageBar,
+    chatScope.bind(),
     vscode.window.registerTreeDataProvider("valueCoach.events", provider),
     vscode.commands.registerCommand("valueCoach.showPanel", () =>
       showCoachMenu(session, store, provider)
@@ -460,6 +485,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       tick(store, provider, session, true);
       usageBar?.restartTimer();
       usageBar?.start();
+    }),
+    vscode.workspace.onDidChangeWorkspaceFolders(() => {
+      chatScope?.clearPin();
+      chatScope?.refresh();
+      tick(store, provider, session, true);
     }),
     {
       dispose: () => {

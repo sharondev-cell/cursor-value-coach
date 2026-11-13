@@ -16,11 +16,14 @@ This policy describes how the **Value Coach for Cursor** editor extension (“Va
 
 When `valueCoach.readTranscripts` is enabled, the extension reads local Cursor agent-transcript files under your Cursor user data (for example under `~/.cursor/projects/.../agent-transcripts`).
 
+To keep coaching scoped to **this Cursor window’s active chat** (including when several windows share one workspace folder), it may also read the local workspace `state.vscdb` key `composer.composerData` for focused/selected composer ids only — not chat bodies, and not auth keys.
+
 It keeps and uses **structural** information such as:
 
 - Approximate turn and tool-event counts
 - Hashed tool-signature fingerprints (not raw tool argument payloads)
 - Opaque transcript ids (hashes), not filesystem paths in persisted state
+- Focused composer ids (in-memory pin per window)
 
 It does **not** persist raw chat/message text for coaching history.
 

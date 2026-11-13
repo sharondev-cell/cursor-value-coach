@@ -16,6 +16,62 @@ function projectsRoot(): string {
   return path.join(cursorHome(), "projects");
 }
 
+/** Cursor Application Support / config root (workspaceStorage lives here). */
+function cursorUserDataRoot(): string {
+  if (process.platform === "darwin") {
+    return path.join(os.homedir(), "Library", "Application Support", "Cursor");
+  }
+  if (process.platform === "linux") {
+    return path.join(
+      process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"),
+      "Cursor"
+    );
+  }
+  return path.join(
+    process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"),
+    "Cursor"
+  );
+}
+
+/**
+ * Cursor project folder id under ~/.cursor/projects/.
+ * Absolute path → replace `/` `.` `\` `:` with `-`, collapse dashes, trim edges.
+ */
+export function pathToCursorProjectSlug(absPath: string): string {
+  const normalized = path.resolve(absPath).replace(/\\/g, "/");
+  const slugified = normalized.replace(/[/.:]/g, "-");
+  let result = "";
+  let prevDash = false;
+  for (const c of slugified) {
+    if (c === "-") {
+      if (!prevDash && result.length > 0) {
+        result += "-";
+      }
+      prevDash = true;
+    } else {
+      result += c;
+      prevDash = false;
+    }
+  }
+  return result.replace(/^-+/, "").replace(/-+$/, "");
+}
+
+export interface TranscriptScanScope {
+  /** Absolute workspace folder paths for this Cursor window. */
+  workspaceFolderPaths: string[];
+  /**
+   * Preferred composer/chat ids (this window's pinned/focused tab first).
+   * When set, those transcripts win over newer chats from other windows.
+   */
+  preferredComposerIds?: string[];
+  /**
+   * When true, never fall back to another chat in the same project if the
+   * preferred composer transcript is missing. Required for same-folder
+   * multi-window isolation (shared project slug, different chats).
+   */
+  strictPreferred?: boolean;
+}
+
 function walkJsonl(dir: string, out: string[], depth = 0): void {
   if (depth > 10 || !fs.existsSync(dir)) {
     return;
@@ -39,6 +95,77 @@ function walkJsonl(dir: string, out: string[], depth = 0): void {
       }
     }
   }
+}
+
+/** Prefer main session transcripts over nested subagent logs when ranking. */
+function isSubagentTranscript(filePath: string): boolean {
+  return filePath.replace(/\\/g, "/").includes("/subagents/");
+}
+
+function composerIdFromTranscriptPath(filePath: string): string | undefined {
+  const norm = filePath.replace(/\\/g, "/");
+  const base = path.basename(filePath, path.extname(filePath));
+  // Nested: .../agent-transcripts/<uuid>/<uuid>.jsonl
+  const parent = path.basename(path.dirname(filePath));
+  if (
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      parent
+    ) &&
+    parent.toLowerCase() === base.toLowerCase()
+  ) {
+    return parent;
+  }
+  // Flat: .../agent-transcripts/<uuid>.txt|jsonl
+  if (
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      base
+    )
+  ) {
+    return base;
+  }
+  // Path contains a UUID segment (e.g. subagent under parent)
+  const match = norm.match(
+    /\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\//i
+  );
+  return match?.[1];
+}
+
+function projectDirsForWorkspace(workspaceFolderPaths: string[]): string[] {
+  const root = projectsRoot();
+  if (!fs.existsSync(root) || workspaceFolderPaths.length === 0) {
+    return [];
+  }
+  const dirs: string[] = [];
+  const seen = new Set<string>();
+  for (const folder of workspaceFolderPaths) {
+    const slug = pathToCursorProjectSlug(folder);
+    if (!slug) {
+      continue;
+    }
+    const dir = path.join(root, slug);
+    if (!seen.has(dir) && fs.existsSync(dir)) {
+      seen.add(dir);
+      dirs.push(dir);
+    }
+    // Also accept prefix matches when Cursor truncated / variant-encoded the path
+    try {
+      for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+        if (!entry.isDirectory()) {
+          continue;
+        }
+        if (entry.name === slug || entry.name.startsWith(`${slug}-`)) {
+          const full = path.join(root, entry.name);
+          if (!seen.has(full)) {
+            seen.add(full);
+            dirs.push(full);
+          }
+        }
+      }
+    } catch {
+      // ignore listing failures
+    }
+  }
+  return dirs;
 }
 
 interface LeanEvent {
@@ -184,34 +311,257 @@ function countInFile(
   };
 }
 
-/** Find the most recently active transcript and return counts only. */
-export function scanLatestTranscript(
-  windowMinutes: number
-): TranscriptSignal | undefined {
-  const root = projectsRoot();
-  if (!fs.existsSync(root)) {
-    return undefined;
-  }
-  const files: string[] = [];
-  walkJsonl(root, files);
-  if (files.length === 0) {
-    return undefined;
-  }
-
-  files.sort((a, b) => {
+function sortByRecency(files: string[]): string[] {
+  return [...files].sort((a, b) => {
+    const aSub = isSubagentTranscript(a) ? 1 : 0;
+    const bSub = isSubagentTranscript(b) ? 1 : 0;
+    if (aSub !== bSub) {
+      return aSub - bSub;
+    }
     try {
       return fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs;
     } catch {
       return 0;
     }
   });
+}
 
-  const windowMs = windowMinutes * 60_000;
-  for (const file of files.slice(0, 8)) {
+function pickFromFiles(
+  files: string[],
+  windowMs: number,
+  preferredComposerIds?: string[],
+  strictPreferred = false
+): TranscriptSignal | undefined {
+  if (files.length === 0) {
+    return undefined;
+  }
+
+  const preferred = (preferredComposerIds ?? [])
+    .map((id) => id.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (preferred.length > 0) {
+    for (const id of preferred) {
+      const matches = files.filter((f) => {
+        if (isSubagentTranscript(f)) {
+          return false;
+        }
+        const cid = composerIdFromTranscriptPath(f)?.toLowerCase();
+        return cid === id || f.replace(/\\/g, "/").toLowerCase().includes(id);
+      });
+      const ranked = sortByRecency(matches);
+      for (const file of ranked.slice(0, 4)) {
+        const signal = countInFile(file, windowMs);
+        if (signal && signal.userTurns + signal.assistantTurns > 0) {
+          return signal;
+        }
+      }
+      // Prefer the focused chat even if the tail has no turns yet
+      if (ranked[0]) {
+        const signal = countInFile(ranked[0], windowMs);
+        if (signal) {
+          return signal;
+        }
+      }
+    }
+    if (strictPreferred) {
+      // Do not bleed into sibling chats from other windows on this workspace.
+      return undefined;
+    }
+  }
+
+  // No pin yet: avoid merging every chat in the project. Only safe when the
+  // caller did not request a preferred id (empty window / first seed).
+  if (strictPreferred) {
+    return undefined;
+  }
+
+  const ranked = sortByRecency(files);
+  for (const file of ranked.slice(0, 8)) {
     const signal = countInFile(file, windowMs);
     if (signal && signal.userTurns + signal.assistantTurns > 0) {
       return signal;
     }
   }
-  return countInFile(files[0], windowMs);
+  return countInFile(ranked[0], windowMs);
+}
+
+/**
+ * Read focused/selected composer ids from this workspace's Cursor state.vscdb.
+ * Only the allowlisted `composer.composerData` key is read (no auth keys).
+ */
+export function readFocusedComposerIds(
+  workspaceFolderPaths: string[]
+): string[] {
+  if (workspaceFolderPaths.length === 0) {
+    return [];
+  }
+  const storageRoot = path.join(
+    cursorUserDataRoot(),
+    "User",
+    "workspaceStorage"
+  );
+  if (!fs.existsSync(storageRoot)) {
+    return [];
+  }
+
+  const targets = new Set(
+    workspaceFolderPaths.map((p) => path.resolve(p).replace(/\\/g, "/").toLowerCase())
+  );
+
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(storageRoot, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+    const dir = path.join(storageRoot, entry.name);
+    const metaPath = path.join(dir, "workspace.json");
+    let metaRaw: string;
+    try {
+      metaRaw = fs.readFileSync(metaPath, "utf8");
+    } catch {
+      continue;
+    }
+    let folder: string | undefined;
+    try {
+      const meta = JSON.parse(metaRaw) as {
+        folder?: string;
+        workspace?: string;
+      };
+      const uri = meta.folder ?? meta.workspace;
+      if (uri) {
+        // file:///path or vscode-remote://...
+        folder = decodeURIComponent(uri.replace(/^file:\/\//, "")).replace(
+          /\\/g,
+          "/"
+        );
+        // Windows file:///C:/...
+        if (/^\/[A-Za-z]:\//.test(folder)) {
+          folder = folder.slice(1);
+        }
+      }
+    } catch {
+      continue;
+    }
+    if (!folder) {
+      continue;
+    }
+    const resolved = path.resolve(folder).replace(/\\/g, "/").toLowerCase();
+    if (![...targets].some((t) => t === resolved || t.startsWith(resolved + "/") || resolved.startsWith(t + "/"))) {
+      continue;
+    }
+
+    const ids = readComposerFocusFromDb(path.join(dir, "state.vscdb"));
+    if (ids.length > 0) {
+      return ids;
+    }
+  }
+  return [];
+}
+
+function readComposerFocusFromDb(dbPath: string): string[] {
+  if (!fs.existsSync(dbPath)) {
+    return [];
+  }
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { DatabaseSync } = require("node:sqlite") as {
+      DatabaseSync: new (
+        path: string,
+        opts?: { readOnly?: boolean }
+      ) => {
+        prepare: (sql: string) => {
+          get: (...params: unknown[]) => { value?: unknown } | undefined;
+        };
+        close: () => void;
+      };
+    };
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+      const row = db
+        .prepare("SELECT value FROM ItemTable WHERE key = ?")
+        .get("composer.composerData");
+      if (row?.value == null) {
+        return [];
+      }
+      const parsed = JSON.parse(String(row.value)) as {
+        lastFocusedComposerIds?: unknown;
+        selectedComposerIds?: unknown;
+        selectedComposerId?: unknown;
+      };
+      const out: string[] = [];
+      const pushId = (v: unknown) => {
+        if (typeof v === "string" && v.trim()) {
+          out.push(v.trim());
+        } else if (v && typeof v === "object" && "composerId" in v) {
+          const id = (v as { composerId?: unknown }).composerId;
+          if (typeof id === "string" && id.trim()) {
+            out.push(id.trim());
+          }
+        }
+      };
+      for (const list of [
+        parsed.lastFocusedComposerIds,
+        parsed.selectedComposerIds,
+      ]) {
+        if (Array.isArray(list)) {
+          for (const item of list) {
+            pushId(item);
+          }
+        }
+      }
+      pushId(parsed.selectedComposerId);
+      // Dedupe, preserve order (focused first)
+      const seen = new Set<string>();
+      return out.filter((id) => {
+        const key = id.toLowerCase();
+        if (seen.has(key)) {
+          return false;
+        }
+        seen.add(key);
+        return true;
+      });
+    } finally {
+      db.close();
+    }
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Find the active transcript for this Cursor window and return counts only.
+ * Scoped to the window's workspace project folder(s); prefers the focused
+ * composer/chat tab when Cursor exposes it in workspace state.
+ */
+export function scanLatestTranscript(
+  windowMinutes: number,
+  scope?: TranscriptScanScope
+): TranscriptSignal | undefined {
+  const windowMs = windowMinutes * 60_000;
+  const folders = scope?.workspaceFolderPaths ?? [];
+  const strictPreferred = scope?.strictPreferred === true;
+  const preferred = scope?.preferredComposerIds ?? [];
+
+  if (folders.length > 0) {
+    const projectDirs = projectDirsForWorkspace(folders);
+    const files: string[] = [];
+    for (const dir of projectDirs) {
+      walkJsonl(path.join(dir, "agent-transcripts"), files);
+      // Some layouts nest agent-transcripts under the project root already walked
+      if (!fs.existsSync(path.join(dir, "agent-transcripts"))) {
+        walkJsonl(dir, files);
+      }
+    }
+    return pickFromFiles(files, windowMs, preferred, strictPreferred);
+  }
+
+  // No folder open in this window: refuse the old global merge across all projects
+  return undefined;
 }

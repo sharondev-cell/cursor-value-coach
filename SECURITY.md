@@ -9,7 +9,7 @@ With **live usage enabled** (off by default + consent):
 - Sends that token **only** to `https://api2.cursor.sh/.../GetCurrentPeriodUsage` over HTTPS
 - Does **not** write the token to disk and does **not** send it to the publisher
 
-Coaching (default) only reads local transcript structure (counts / hashes).
+Coaching (default) only reads local transcript structure (counts / hashes), and may read the workspace `composer.composerData` focus ids to pin coaching to this window’s active chat (not auth material).
 
 ## Can this be hacked or used unlawfully?
 

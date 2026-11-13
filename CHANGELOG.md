@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.4
+
+### Fixed
+
+- Coaching no longer merges chats across Cursor windows that share the same workspace folder (e.g. different git branches, each with their own chats). Each window pins to its focused composer/chat and ignores sibling windows’ transcript activity and shared focus state.
+
 ## 0.3.3
 
 ### Security

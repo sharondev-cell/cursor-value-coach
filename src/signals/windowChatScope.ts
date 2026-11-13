@@ -1,6 +1,32 @@
 import * as vscode from "vscode";
 import { readFocusedComposerIds } from "./transcripts";
 
+export interface WindowFocusState {
+  focused: boolean;
+}
+
+export interface WindowChatScopeDeps {
+  isFocused: () => boolean;
+  onDidChangeWindowState: (
+    listener: (state: WindowFocusState) => void
+  ) => { dispose(): void };
+  workspaceFolderPaths: () => string[];
+  readFocusedComposerIds: (folders: string[]) => string[];
+}
+
+function defaultDeps(): WindowChatScopeDeps {
+  return {
+    isFocused: () => vscode.window.state.focused,
+    onDidChangeWindowState: (listener) =>
+      vscode.window.onDidChangeWindowState((state) =>
+        listener({ focused: state.focused })
+      ),
+    workspaceFolderPaths: () =>
+      (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath),
+    readFocusedComposerIds,
+  };
+}
+
 /**
  * Per-window (extension-host) affinity for the active Cursor chat.
  *
@@ -14,23 +40,37 @@ import { readFocusedComposerIds } from "./transcripts";
  * window-local. We only adopt Cursor's *shared* focus id while *this* window
  * is focused; updates that happen while we are unfocused (sibling window)
  * never steal the pin.
+ *
+ * `deps` is injectable for unit tests.
  */
 export class WindowChatScope {
   private pinnedComposerId: string | undefined;
   /** Last focus id observed during a contiguous focused period. */
   private lastSeenFocusWhileFocused: string | undefined;
-  private windowFocused = vscode.window.state.focused;
+  private windowFocused: boolean;
+  private readonly deps: WindowChatScopeDeps;
 
-  constructor() {
-    this.windowFocused = vscode.window.state.focused;
+  constructor(deps?: Partial<WindowChatScopeDeps>) {
+    // When tests pass a full deps object, skip vscode defaults entirely.
+    if (
+      deps?.isFocused &&
+      deps.onDidChangeWindowState &&
+      deps.workspaceFolderPaths &&
+      deps.readFocusedComposerIds
+    ) {
+      this.deps = deps as WindowChatScopeDeps;
+    } else {
+      this.deps = { ...defaultDeps(), ...deps };
+    }
+    this.windowFocused = this.deps.isFocused();
     if (this.windowFocused) {
       this.adoptFocusIfNeeded(true);
     }
   }
 
   /** Subscribe to window focus; returns a disposable. */
-  bind(): vscode.Disposable {
-    return vscode.window.onDidChangeWindowState((state) => {
+  bind(): { dispose(): void } {
+    return this.deps.onDidChangeWindowState((state) => {
       const wasFocused = this.windowFocused;
       this.windowFocused = state.focused;
       if (!state.focused) {
@@ -73,7 +113,7 @@ export class WindowChatScope {
   }
 
   workspaceFolderPaths(): string[] {
-    return (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath);
+    return this.deps.workspaceFolderPaths();
   }
 
   /**
@@ -86,7 +126,9 @@ export class WindowChatScope {
   }
 
   private adoptFocusIfNeeded(seedOnly: boolean): void {
-    const focused = readFocusedComposerIds(this.workspaceFolderPaths());
+    const focused = this.deps.readFocusedComposerIds(
+      this.deps.workspaceFolderPaths()
+    );
     const current = focused[0]?.trim();
     if (!current) {
       return;

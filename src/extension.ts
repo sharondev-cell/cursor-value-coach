@@ -15,6 +15,7 @@ import type { CoachEvent, CoachVerdict } from "./types";
 import { EventsProvider } from "./ui/eventsView";
 import { openPlanAndUsage } from "./usage/openPlanUsage";
 import { UsageStatusBar } from "./usage/statusBar";
+import { MemoryMemento } from "./util/memoryMemento";
 
 let statusBar: vscode.StatusBarItem;
 let usageBar: UsageStatusBar | undefined;
@@ -25,35 +26,6 @@ let chatScope: WindowChatScope | undefined;
 
 function cfg() {
   return vscode.workspace.getConfiguration("valueCoach");
-}
-
-/**
- * In-memory memento so snooze/notify gates stay per-window.
- * workspaceState is shared across windows on the same folder — unusable here.
- */
-class MemoryMemento implements vscode.Memento {
-  private readonly data = new Map<string, unknown>();
-
-  keys(): readonly string[] {
-    return [...this.data.keys()];
-  }
-
-  get<T>(key: string): T | undefined;
-  get<T>(key: string, defaultValue: T): T;
-  get<T>(key: string, defaultValue?: T): T | undefined {
-    if (this.data.has(key)) {
-      return this.data.get(key) as T;
-    }
-    return defaultValue;
-  }
-
-  async update(key: string, value: unknown): Promise<void> {
-    if (value === undefined) {
-      this.data.delete(key);
-    } else {
-      this.data.set(key, value);
-    }
-  }
 }
 
 /** Scope coaching to this window's pinned chat — not every chat on the folder. */
